@@ -6,7 +6,7 @@ A [Claude Code](https://claude.com/claude-code) mod that keeps your context use 
 
 The screenshot shows the footer in iTerm2 with Claude Code's `dark-ansi` theme. The 7-day meter is orange because it has passed 75% of its limit; below that it is blue.
 
-## What it shows
+## Features
 
 The footer adds three rows under Claude Code's own footer line, and two items at the end of that line. Claude Code's line itself (the permission mode, the background-agent count and so on) is left as it is.
 
@@ -18,7 +18,7 @@ The footer adds three rows under Claude Code's own footer line, and two items at
 
 The context figures come from the same breakdown `/context` uses, estimated locally: the mod makes no API calls and sends nothing anywhere. The limits are the figures Claude Code receives with each reply. They appear only on a Claude subscription; elsewhere the meters show `–`.
 
-## Installing
+## Installation
 
 At the prompt of a Claude Code session in a terminal, run:
 
@@ -41,9 +41,9 @@ There are two things to be aware of before installing it:
 
 To remove it, run `/plugin uninstall usage-footer`.
 
-## Adjusting it
+## Customization
 
-This section lists the settings near the top of `hooks/register.tsx` that are easiest to change. If you run the mod from a folder of your own (for example with `CLAUDE_CODE_PLUGIN_DIRS` pointing at a clone), Claude Code reloads it whenever you save.
+This section lists the constants near the top of `hooks/register.tsx` that are easiest to change. If you run the mod from a folder of your own (for example with `CLAUDE_CODE_PLUGIN_DIRS` pointing at a clone), Claude Code reloads it whenever you save.
 
 - `GAP` sets the space between the context part and the limit meters.
 - `LIMIT_BAR` sets the width of each limit meter's bar, and `MIN_BAR` sets the narrowest the context bar may get.
