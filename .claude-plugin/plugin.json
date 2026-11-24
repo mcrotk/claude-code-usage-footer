@@ -1,0 +1,7 @@
+{
+  "name": "usage-footer",
+  "version": "0.1.0",
+  "description": "Under the prompt: context use by category with the auto-compact point, the 5-hour and 7-day plan limits, and the model and effort level.",
+  "license": "MIT",
+  "types": "./types/index.d.ts"
+}
