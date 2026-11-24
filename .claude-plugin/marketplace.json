@@ -1,0 +1,6 @@
+{
+  "name": "claude-code-usage-footer",
+  "owner": { "name": "mcrotk" },
+  "description": "A Claude Code mod showing context use, plan limits, and the model and effort level under the prompt.",
+  "plugins": [{ "name": "usage-footer", "source": "./" }]
+}
