@@ -2,14 +2,9 @@
 
 A [Claude Code](https://claude.com/claude-code) mod that keeps your context use and plan limits in view, under the prompt, where Claude Code otherwise shows only its own one-line footer.
 
-```
-⏵⏵ bypass permissions on (shift+tab to cycle) · Opus 5.5 · high effort
-                                       160k / 1M (16%) · compacts at 967k
-context ██████──────────────────────────────░░░        5h ██░░░░░░  12% resets Mon 20:40
-■ system prompt 3k  ■ system tools 18k  ■ skills 6k  ■ messages 129k        7d ██████░░  73% resets Tue 17:00
-```
+![The footer under the Claude Code prompt. Claude Code's own line, which shows the permission mode, ends with "Opus 5.5 · high effort". Below it are the context figures (277k of 1M tokens in use, 28%, compacting at 967k), a bar split into colored categories with a long magenta stretch for messages, a legend of the categories with their tokens, and on the right the 5-hour meter (green, 9%) and the 7-day meter (orange, 76%) with their reset times.](images/footer.png)
 
-In the terminal, each category has its own color in the bar and the legend, and the meters change color as they fill.
+The screenshot shows the footer in iTerm2 with Claude Code's `dark-ansi` theme. The 7-day meter is orange because it has passed 75% of its limit; below that it is blue.
 
 ## What it shows
 
