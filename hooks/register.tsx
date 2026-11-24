@@ -28,6 +28,13 @@ const modelInfo = atom({ plugin: 'usage-footer', key: 'modelInfo' } as const, {
 
 /** Cells between the context column and the limits column. */
 const GAP = 8
+/**
+ * Cells of the terminal's width that the footer can't use: Claude Code indents
+ * the footer two columns on each side, and `e.viewport.columns` is the whole
+ * terminal. Without this the rows were up to four cells too wide at medium
+ * widths, and the reset times at their ends were cut off.
+ */
+const FOOTER_INSET = 4
 /** Cells the reset time is padded to, so both meters line up (`Tue 17:00`). */
 const RESET_WIDTH = 9
 /**
@@ -429,7 +436,9 @@ function padTo(spans: Span[], width: number): Span[] {
  * start in the same column.
  */
 function footerRows(snap: Snapshot & { context: ContextFigures }, columns: number): Span[][] {
-  const contextRoom = columns - GAP - LIMIT_WIDTH
+  // The legend merges categories into "other" until the context part fits
+  // beside the meters in the width the footer actually gets.
+  const contextRoom = columns - FOOTER_INSET - GAP - LIMIT_WIDTH
   const legend = legendLine(snap.context, contextRoom)
   const stats = contextStats(snap.context)
   const bar = contextLine(snap.context, barCellsFor(spanWidth(legend)))
