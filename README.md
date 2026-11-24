@@ -1,6 +1,6 @@
 # usage-footer
 
-A [Claude Code](https://claude.com/claude-code) [mod](https://github.com/anthropics/claude-code-playground/tree/main/claude-code/mods) that keeps your context use and plan limits in view, under the prompt, where Claude Code otherwise shows only its own one-line footer. The mod's name is `usage-footer`; this repository, `claude-code-usage-footer`, is where it's installed from.
+A [Claude Code mod](https://github.com/anthropics/claude-code-playground/tree/main/claude-code/mods) that keeps your context use and plan limits in view, under the prompt, where Claude Code otherwise shows only its own one-line footer. The mod's name is `usage-footer`; this repository, `claude-code-usage-footer`, is where it's installed from.
 
 ![The footer under the Claude Code prompt. Claude Code's own line, which shows the permission mode, ends with "Opus 5.5 · high effort". Below it are the context figures (284k of 1M tokens in use, 28%, compacting at 967k), a bar split into colored categories with a long magenta stretch for messages, a legend of the categories with their tokens, and on the right the 5-hour meter (green, 11%) and the 7-day meter (orange, 76%) with their reset times.](images/footer.png)
 
