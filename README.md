@@ -1,6 +1,6 @@
 # usage-footer
 
-A [Claude Code](https://claude.com/claude-code) mod that keeps your context use and plan limits in view, under the prompt, where Claude Code otherwise shows only its own one-line footer.
+A [Claude Code](https://claude.com/claude-code) [mod](https://github.com/anthropics/claude-code-playground/tree/main/claude-code/mods) that keeps your context use and plan limits in view, under the prompt, where Claude Code otherwise shows only its own one-line footer. The mod's name is `usage-footer`; this repository, `claude-code-usage-footer`, is where it's installed from.
 
 ![The footer under the Claude Code prompt. Claude Code's own line, which shows the permission mode, ends with "Opus 5.5 · high effort". Below it are the context figures (284k of 1M tokens in use, 28%, compacting at 967k), a bar split into colored categories with a long magenta stretch for messages, a legend of the categories with their tokens, and on the right the 5-hour meter (green, 11%) and the 7-day meter (orange, 76%) with their reset times.](images/footer.png)
 
@@ -16,7 +16,7 @@ The footer adds three rows under Claude Code's own footer line, and two items at
 - **Legend.** The row under the bar lists each category with its tokens. In a narrow terminal, the smallest categories are merged into "other", and the bar shrinks to match.
 - **Plan limits.** Beside the bar and the legend are meters for the 5-hour and 7-day usage limits, each with the percentage used and the time it resets, in your local time. The 5-hour meter is green, then yellow from 75%; the 7-day meter is blue, then orange from 75%. Both turn red from 90%.
 
-The context figures come from the same breakdown `/context` uses, estimated locally: the mod makes no API calls and sends nothing anywhere. The limits are the figures Claude Code receives with each reply. They appear only on a Claude subscription; elsewhere the meters show `–`.
+The context figures come from the same breakdown `/context` uses, estimated locally: the mod makes no API calls and sends nothing anywhere. The limits are the figures Claude Code receives with each reply, and Claude only sends them to people using Claude Code through a Claude subscription, such as a Pro or Max plan. With an API key or a cloud provider, there are no such limits to show, so each meter shows only a dash after its label instead of a bar and its figures.
 
 ## Installation
 
@@ -36,7 +36,7 @@ claude plugin install usage-footer --marketplace mcrotk/claude-code-usage-footer
 
 There are two things to be aware of before installing it:
 
-- Mods are an early-access part of Claude Code, and their API may change between releases. This mod was written and tested on Claude Code 2.1.325, on macOS in iTerm2.
+- Mods are an early-access part of Claude Code, and their API may change between releases. They need Claude Code 2.1.287 or later, the first version in which mods load by default. This mod was written and tested on Claude Code 2.1.325, on macOS in iTerm2.
 - The mod is built for the terminal. It draws through the component under the prompt (`PromptHint`), which other surfaces may draw differently or not at all.
 
 To remove it, run `/plugin uninstall usage-footer`.
