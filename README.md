@@ -49,7 +49,7 @@ To return to the original form, enter:
 /usage-footer-view auto
 ```
 
-A form you choose stays in every session, including ones already open (after their next reply), until you return to the original form. Each form shows only real figures. Where Claude doesn't send the figures a form needs, as with the 5-hour and 7-day limits when you aren't on a subscription, its meters show dashes. On a subscription, the cost form shows what your use would cost at API prices, which you don't actually pay.
+A form you choose stays in every session, including ones already open (after their next reply), until you return to the original form. Where Claude doesn't send the figures a form needs, as with the 5-hour and 7-day limits when you aren't on a subscription, its meters show dashes. On a subscription, the cost form shows what your use would cost at API prices, which you don't actually pay.
 
 ## Installation
 
