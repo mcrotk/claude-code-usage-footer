@@ -210,15 +210,44 @@ async function seedModelInfo($: EngineInterface): Promise<void> {
 // ---------------------------------------------------------------------------
 
 /**
+ * Strips what cloud providers add around Anthropic's model ID, leaving e.g.
+ * `claude-sonnet-5-5`: an ARN's path (`arn:aws:bedrock:…/us.anthropic.…`), a
+ * Bedrock region and provider prefix (`us.anthropic.`, `global.anthropic.`), a
+ * Bedrock version suffix (`-v1:0`) and a Vertex date suffix (`@20250929`).
+ */
+function anthropicModelId(id: string): string {
+  return (id.split('/').pop() ?? id)
+    .replace(/^(?:[a-z-]+\.)?anthropic\./, '')
+    .replace(/-v\d+(?::\d+)?$/, '')
+    .replace(/@\d{8}$/, '')
+}
+
+/** Capitalizes a model family's name: `sonnet` → `Sonnet`. */
+function familyName(family: string): string {
+  return `${family.charAt(0).toUpperCase()}${family.slice(1)}`
+}
+
+/**
  * Turns a model ID into a short name: `claude-opus-5-5` → `Opus 5.5`,
- * `claude-sonnet-4-5-20250929` → `Sonnet 4.5`. Anything else is shown as given.
+ * `claude-sonnet-4-5-20250929` → `Sonnet 4.5`, `us.anthropic.claude-sonnet-5-5`
+ * → `Sonnet 5.5`, and the older order `claude-3-5-sonnet-20241022` →
+ * `Sonnet 3.5`. Anything else is shown as given.
  */
 function modelName(id: string): string {
-  const match = /^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?(\[.*\])?$/.exec(id)
-  if (!match) return id
-  const [, family = '', major, minor, suffix = ''] = match
-  const version = minor === undefined ? major : `${major}.${minor}`
-  return `${family.charAt(0).toUpperCase()}${family.slice(1)} ${version}${suffix}`
+  const core = anthropicModelId(id)
+  // Current IDs put the family first: claude-<family>-<major>[-<minor>][-<date>][<suffix>].
+  const current = /^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?(\[.*\])?$/.exec(core)
+  if (current) {
+    const [, family = '', major, minor, suffix = ''] = current
+    return `${familyName(family)} ${minor === undefined ? major : `${major}.${minor}`}${suffix}`
+  }
+  // Older IDs put the version first: claude-<major>[-<minor>]-<family>[-<date>].
+  const older = /^claude-(\d+)(?:-(\d))?-([a-z]+)(?:-\d{8}|-latest)?$/.exec(core)
+  if (older) {
+    const [, major, minor, family = ''] = older
+    return `${familyName(family)} ${minor === undefined ? major : `${major}.${minor}`}`
+  }
+  return id
 }
 
 /**
