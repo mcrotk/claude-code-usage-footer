@@ -30,7 +30,7 @@ The costs are estimates at Anthropic's list prices, the same ones `/cost` uses, 
 
 The session's cost is Claude Code's own figure for the session. The week's and month's totals are kept by the mod, which has two consequences:
 
-- The totals only include spending from the time the mod started tracking it, which is when you installed it or updated it to version 0.2.0. In a session that was already running at that point, only what it spends afterwards is counted. The first week's and month's totals are therefore partial.
+- The totals only include spending from the time the mod started tracking it: when you installed it, or, if you installed a version before 0.2.0, when you first updated to a later one. In a session that was already running at that point, only what it spends afterwards is counted. The first week's and month's totals are therefore partial.
 - The totals only include sessions that ran with the mod on the same computer. Spending on other computers, through other tools, or by other people on the same account isn't included.
 
 ### Choosing a form
