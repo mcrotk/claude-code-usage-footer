@@ -33,9 +33,23 @@ The session's cost is Claude Code's own figure for the session. The week's and m
 - The totals only include spending from the time the mod started tracking it, which is when you installed it or updated it to version 0.2.0. In a session that was already running at that point, only what it spends afterwards is counted. The first week's and month's totals are therefore partial.
 - The totals only include sessions that ran with the mod on the same computer. Spending on other computers, through other tools, or by other people on the same account isn't included.
 
-### Previewing the other forms
+### Choosing a form
 
-To see how the cost and spend-limit columns look without that setup, run `/usage-footer-preview cost` or `/usage-footer-preview spend` in a session, and `/usage-footer-preview off` to go back. The cost preview uses your real figures; on a subscription, those are only what your use would cost at API prices. The spend preview shows a made-up limit, 42% used and resetting at the start of next month, unless a real one has arrived. A preview lasts only for the session it's run in.
+The footer shows the form that the mod has determined would be most helpful for you. To view the others, run one of these commands in a session, which show the subscription, cost and spend-limit forms, respectively:
+
+```
+/usage-footer-view plan
+/usage-footer-view cost
+/usage-footer-view spend
+```
+
+To return to the original form, enter:
+
+```
+/usage-footer-view auto
+```
+
+A form you choose stays in every session, including ones already open (after their next reply), until you return to the original form. Each form shows only real figures. Where Claude doesn't send the figures a form needs, as with the 5-hour and 7-day limits when you aren't on a subscription, its meters show dashes. On a subscription, the cost form shows what your use would cost at API prices, which you don't actually pay.
 
 ## Installation
 
@@ -58,7 +72,11 @@ There are two things to be aware of before installing it:
 - Mods are an early-access part of Claude Code, and their API may change between releases. They need Claude Code 2.1.287 or later, the first version in which mods load by default. This mod was written and tested on Claude Code 2.1.325, on macOS in iTerm2.
 - The mod is built for the terminal. It draws through the component under the prompt (`PromptHint`), which other surfaces may draw differently or not at all.
 
-To remove it, run `/plugin uninstall usage-footer`.
+To remove it, run this command at the prompt:
+
+```
+/plugin uninstall usage-footer
+```
 
 ### Updating
 
@@ -86,7 +104,11 @@ This section lists the constants near the top of `hooks/register.tsx` that are e
 - `FIRST_LIMIT`, `SECOND_LIMIT` and `SPEND_LIMIT` set the colors of the 5-hour, 7-day and spend-limit meters below and above their warning point, and `LIMIT_WARN_AT` and `LIMIT_ERROR_AT` set where the colors change.
 - `CATEGORY_COLORS` gives colors to use in place of the theme's for particular categories. By default "System tools" is blue, because some themes draw it in the same grey as "System prompt".
 
-After a change, `claude plugin validate <folder>` checks the module (including its types) the way Claude Code will load it.
+After a change, this command checks the module, including its types, the way Claude Code will load it:
+
+```
+claude plugin validate <folder>
+```
 
 ## License
 
