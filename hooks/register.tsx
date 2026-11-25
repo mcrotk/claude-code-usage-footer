@@ -231,7 +231,8 @@ function familyName(family: string): string {
  * Turns a model ID into a short name: `claude-opus-5-5` → `Opus 5.5`,
  * `claude-sonnet-4-5-20250929` → `Sonnet 4.5`, `us.anthropic.claude-sonnet-5-5`
  * → `Sonnet 5.5`, and the older order `claude-3-5-sonnet-20241022` →
- * `Sonnet 3.5`. Anything else is shown as given.
+ * `Sonnet 3.5`. Anything else is shown as given, less any provider additions
+ * (`us.anthropic.my-deployment-v1:0` → `my-deployment`).
  */
 function modelName(id: string): string {
   const core = anthropicModelId(id)
@@ -247,7 +248,7 @@ function modelName(id: string): string {
     const [, major, minor, family = ''] = older
     return `${familyName(family)} ${minor === undefined ? major : `${major}.${minor}`}`
   }
-  return id
+  return core
 }
 
 /**
