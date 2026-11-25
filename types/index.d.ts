@@ -7,7 +7,7 @@ export type Category = {
   kind: 'used' | 'free' | 'buffer'
 }
 
-/** One plan limit window (`five_hour` or `seven_day`). */
+/** One limit window: `five_hour`, `seven_day`, or a gateway's `spend_limit`. */
 export type Limit = {
   kind: string
   /** 0 to 100. */
@@ -33,7 +33,24 @@ export type ContextFigures = {
 export type Snapshot = {
   context: ContextFigures | null
   limits: Limit[]
+  /** What this session has cost so far, in US dollars, as /cost totals it. */
+  costUsd: number | null
+  /** Whether a reply has come back in this session, so limit figures would have arrived. */
+  hasReplied: boolean
+  /** Whether 5-hour or 7-day figures have arrived in this session (a Claude subscription). */
+  hasPlanLimits: boolean
 }
+
+/** This week's and this month's cost across sessions, in US dollars. */
+export type CostTotals = {
+  week: number
+  month: number
+  /** The month's short name, shown as the row's label: `Nov`. */
+  monthLabel: string
+}
+
+/** A layout forced with /usage-footer-preview, or null for the real one. */
+export type Preview = 'cost' | 'spend' | null
 
 /** The model and effort level shown at the end of Claude Code's footer line. */
 export type ModelInfo = {
@@ -45,6 +62,13 @@ export type ModelInfo = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'usage-footer': { snapshot: Snapshot | null; modelInfo: ModelInfo }
+    'usage-footer': {
+      snapshot: Snapshot | null
+      modelInfo: ModelInfo
+      /** Whether Claude Code is billed per token here (Bedrock, Vertex, Foundry, an API key). */
+      payPerUse: boolean
+      totals: CostTotals | null
+      preview: Preview
+    }
   }
 }

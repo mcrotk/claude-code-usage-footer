@@ -5,7 +5,10 @@
  * model and effort level added at its end. Under it: the tokens in use, the
  * window size and where auto-compaction runs; the context window as a bar split
  * by category (the same breakdown /context draws), with a legend underneath;
- * and beside those, the 5-hour and 7-day plan limits.
+ * and beside those, what the person can run out of: the 5-hour and 7-day plan
+ * limits on a Claude subscription, or, where Claude Code is billed per token,
+ * the cost of this session, this week and this month. Where a gateway sets a
+ * spend limit, the rows are this session's cost, this month's, and the limit.
  */
 import { atom, read, update } from 'claude-code'
 import type {
@@ -16,7 +19,16 @@ import type {
   SessionUsage,
 } from 'claude-code'
 
-import type { Category, ContextFigures, Limit, ModelInfo, Snapshot } from '../types'
+import type {
+  Category,
+  ContextFigures,
+  CostTotals,
+  Limit,
+  ModelInfo,
+  Preview,
+  Snapshot,
+} from '../types'
+import { costTotals, formatUsd, monthName, recordCost } from './cost'
 
 /** The figures the footer draws, kept in session state so a redraw reads them. */
 const snapshot = atom({ plugin: 'usage-footer', key: 'snapshot' } as const, null)
@@ -25,6 +37,12 @@ const modelInfo = atom({ plugin: 'usage-footer', key: 'modelInfo' } as const, {
   model: null,
   effort: null,
 } as ModelInfo)
+/** Whether Claude Code is billed per token here, worked out at session start. */
+const payPerUse = atom({ plugin: 'usage-footer', key: 'payPerUse' } as const, false)
+/** This week's and this month's cost across sessions, for the pay-per-use rows. */
+const totals = atom({ plugin: 'usage-footer', key: 'totals' } as const, null as CostTotals | null)
+/** A layout forced with /usage-footer-preview, so each case can be looked at. */
+const preview = atom({ plugin: 'usage-footer', key: 'preview' } as const, null as Preview)
 
 /** Cells between the context column and the limits column. */
 const GAP = 8
@@ -50,7 +68,6 @@ const KIND_ORDER: Record<Category['kind'], number> = { used: 0, free: 1, buffer:
 const LIMIT_BAR = 8
 /** The narrowest the context bar is allowed to get. */
 const MIN_BAR = 10
-/** The limit window shown on each line, with its label. */
 /**
  * Each meter's colours below the warning point and from it; both turn the
  * theme's red (`error`) from 90%. The 7-day meter has its own pair so the two
@@ -69,7 +86,16 @@ const SECOND_LIMIT: LimitSpec = {
   safeColor: 'blueBright',
   warningColor: '#ff8700',
 }
-const LIMIT_KINDS = [FIRST_LIMIT.kind, SECOND_LIMIT.kind]
+/** A gateway's spend limit (daily, weekly or monthly; mods aren't told which). */
+const SPEND_LIMIT: LimitSpec = {
+  kind: 'spend_limit',
+  label: 'limit',
+  safeColor: 'success',
+  warningColor: 'warning',
+}
+const LIMIT_KINDS = [FIRST_LIMIT.kind, SECOND_LIMIT.kind, SPEND_LIMIT.kind]
+/** The widest label in the right-hand column when it shows cost (`session`). */
+const COST_LABEL_WIDTH = 7
 /** Where a limit meter turns to its warning colour, then to red. */
 const LIMIT_WARN_AT = 0.75
 const LIMIT_ERROR_AT = 0.9
@@ -109,6 +135,11 @@ function contextFromBreakdown(
   }
 }
 
+/** Whether a limit window is one of a Claude subscription's (5-hour or 7-day). */
+function isPlanLimit(limit: { kind: string }): boolean {
+  return limit.kind === FIRST_LIMIT.kind || limit.kind === SECOND_LIMIT.kind
+}
+
 /** Keeps the limit windows the footer shows, in plain-data form. */
 function limitsFrom(rateLimits: SessionRateLimit[]): Limit[] {
   return rateLimits
@@ -126,6 +157,12 @@ function nextSnapshot(prev: Snapshot | null, usage: SessionUsage): Snapshot {
       ? contextFromBreakdown(breakdown, usage.context.window)
       : (prev?.context ?? null),
     limits: limitsFrom(usage.rateLimits),
+    costUsd: usage.cost?.usd ?? prev?.costUsd ?? null,
+    // Both stay true once true: the context's token count is absent again
+    // right after a compaction, and a plan window drops out briefly after it
+    // resets, but neither changes how the session is billed.
+    hasReplied: (prev?.hasReplied ?? false) || usage.context.tokens !== undefined,
+    hasPlanLimits: (prev?.hasPlanLimits ?? false) || usage.rateLimits.some(isPlanLimit),
   }
 }
 
@@ -143,6 +180,47 @@ async function refresh($: EngineInterface, withBreakdown: boolean): Promise<void
   } catch (err) {
     $.ui.log(`usage-footer: could not read usage: ${String(err)}`)
   }
+}
+
+/**
+ * Records this session's cost toward the week's and month's totals, then
+ * recomputes the totals for the footer.
+ */
+async function refreshCost($: EngineInterface, usd: number | undefined): Promise<void> {
+  try {
+    const now = await $.clock.now()
+    if (usd !== undefined) await recordCost($, usd, now)
+    const sums = await costTotals($, now)
+    await update($, totals, () => sums)
+  } catch (err) {
+    $.ui.log(`usage-footer: could not record or total the cost: ${String(err)}`)
+  }
+}
+
+/** Whether an environment variable is set to something other than off. */
+function isSet(value: string | undefined): boolean {
+  return value !== undefined && value !== '' && value !== '0' && value.toLowerCase() !== 'false'
+}
+
+/**
+ * Works out whether Claude Code is billed per token here: through a cloud
+ * provider (the six settings Claude Code itself treats as one: Amazon Bedrock,
+ * Google Vertex AI, Microsoft Foundry, Claude Platform on AWS, Claude on Google
+ * Cloud, and Mantle), through a company gateway, or with an API key. The key's
+ * value is only checked for being set; it is never kept or shown.
+ */
+async function detectPayPerUse($: EngineInterface): Promise<void> {
+  const values = [
+    await $.env.get('CLAUDE_CODE_USE_BEDROCK'),
+    await $.env.get('CLAUDE_CODE_USE_VERTEX'),
+    await $.env.get('CLAUDE_CODE_USE_FOUNDRY'),
+    await $.env.get('CLAUDE_CODE_USE_ANTHROPIC_AWS'),
+    await $.env.get('CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD'),
+    await $.env.get('CLAUDE_CODE_USE_MANTLE'),
+    await $.env.get('CLAUDE_CODE_USE_GATEWAY'),
+    await $.env.get('ANTHROPIC_API_KEY'),
+  ]
+  await update($, payPerUse, () => values.some(isSet))
 }
 
 /** Reads the main model's name and stores it, keeping the last effort level seen. */
@@ -278,11 +356,16 @@ function twoDigits(n: number): string {
   return String(n).padStart(2, '0')
 }
 
-/** Formats a reset time as `Fri 09:00`; both meters use the same form so their columns line up. */
-function formatReset(iso: string | undefined): string {
+/**
+ * Formats a reset time: as a weekday and time (`Fri 09:00`) for the 5-hour
+ * and 7-day meters, which share that form so their columns line up, or as a
+ * date (`Dec 1`) for a spend limit, which may run for a month.
+ */
+function formatReset(iso: string | undefined, asDate: boolean): string {
   if (!iso) return ''
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
+  if (asDate) return `${monthName(d)} ${d.getDate()}`
   const time = `${twoDigits(d.getHours())}:${twoDigits(d.getMinutes())}`
   return `${WEEKDAYS[d.getDay()] ?? ''} ${time}`
 }
@@ -433,19 +516,24 @@ function meterColor(fraction: number, spec: LimitSpec): string {
   return spec.safeColor
 }
 
-/** One limit meter: `5h ██░░░░░░  23% resets Mon 18:40`, coloured as it fills. */
-function limitLine(limits: Limit[], spec: LimitSpec): Span[] {
+/**
+ * One limit meter: `5h ██░░░░░░  23% resets Mon 18:40`, coloured as it fills.
+ * The label is right-aligned to `labelWidth`, so it lines up with the labels
+ * of the cost rows above a spend limit.
+ */
+function limitLine(limits: Limit[], spec: LimitSpec, labelWidth = 2): Span[] {
+  const label = spec.label.padStart(labelWidth)
   const limit = limits.find(l => l.kind === spec.kind)
-  if (!limit) return [{ text: `${spec.label} –`, dim: true }]
+  if (!limit) return [{ text: `${label} –`, dim: true }]
 
   const fraction = Math.min(1, Math.max(0, limit.percent / 100))
   const filled = Math.round(fraction * LIMIT_BAR)
   const color = meterColor(fraction, spec)
-  const reset = formatReset(limit.resetsAt)
+  const reset = formatReset(limit.resetsAt, spec.kind === SPEND_LIMIT.kind)
   const percent = `${Math.round(limit.percent)}%`.padStart(4)
 
   return [
-    { text: `${spec.label} `, dim: true },
+    { text: `${label} `, dim: true },
     { text: '█'.repeat(filled), color },
     { text: '░'.repeat(LIMIT_BAR - filled), dim: true },
     // The figure takes the bar's colour only once it's a warning, so it stands out.
@@ -460,26 +548,124 @@ function padTo(spans: Span[], width: number): Span[] {
   return missing > 0 ? [...spans, { text: ' '.repeat(missing) }] : spans
 }
 
+/** One row of the cost column: a label, `≈ $` and an amount. */
+type CostEntry = { label: string; usd: number }
+
+/**
+ * Cost rows such as `session ≈ $   1.84`: labels right-aligned, and amounts
+ * right-aligned to the widest, so the `≈`, the `$` and the decimal points of
+ * all the rows line up. As with the meters, the label is dim and the figure
+ * (`≈ $` and the amount) is at normal brightness.
+ */
+function costRows(entries: CostEntry[]): Span[][] {
+  const amounts = entries.map(entry => formatUsd(entry.usd))
+  const amountWidth = Math.max(...amounts.map(a => a.length))
+  return entries.map((entry, i) => [
+    { text: entry.label.padStart(COST_LABEL_WIDTH), dim: true },
+    { text: ` ≈ $${(amounts[i] ?? '').padStart(amountWidth)}` },
+  ])
+}
+
+/** Which kind of right-hand column to draw. */
+type Column = 'plan' | 'cost' | 'spend'
+
+/**
+ * Chooses the right-hand column. Figures that arrived win: a spend limit, then
+ * plan limits. Without either, the cost rows are shown when the settings say
+ * Claude Code is billed per token, or once a reply has come back with no limit
+ * figures: a subscription always gets its 5-hour and 7-day figures with the
+ * first reply, so their absence means per-token billing the settings didn't
+ * reveal (a Console sign-in, an `apiKeyHelper`, a proxy). Before the first
+ * reply, anyone else gets the plan meters' dashes.
+ */
+function chooseColumn(snap: Snapshot, isPayPerUse: boolean, forced: Preview): Column {
+  if (forced !== null) return forced
+  if (snap.limits.some(l => l.kind === SPEND_LIMIT.kind)) return 'spend'
+  if (snap.hasPlanLimits) return 'plan'
+  return isPayPerUse || snap.hasReplied ? 'cost' : 'plan'
+}
+
+/**
+ * A made-up spend limit for the `spend` preview, when no real one has
+ * arrived: 42% used, resetting at the start of next month.
+ */
+function sampleSpendLimit(now: number): Limit {
+  const date = new Date(now)
+  const nextMonth = new Date(date.getFullYear(), date.getMonth() + 1, 1)
+  return { kind: SPEND_LIMIT.kind, percent: 42, resetsAt: nextMonth.toISOString() }
+}
+
+/** Everything the right-hand column draws from. */
+type ColumnInput = {
+  column: Column
+  limits: Limit[]
+  sessionUsd: number
+  totals: CostTotals
+  now: number
+}
+
+/**
+ * The right-hand column's three rows, top to bottom, covering longer spans of
+ * time as they go down. On a plan, the top row is empty and the two meters sit
+ * beside the bar and the legend.
+ */
+function rightRows({ column, limits, sessionUsd, totals, now }: ColumnInput): Span[][] {
+  if (column === 'plan') {
+    return [[], limitLine(limits, FIRST_LIMIT), limitLine(limits, SECOND_LIMIT)]
+  }
+  if (column === 'cost') {
+    return costRows([
+      { label: 'session', usd: sessionUsd },
+      { label: 'week', usd: totals.week },
+      { label: totals.monthLabel, usd: totals.month },
+    ])
+  }
+  const spend = limits.some(l => l.kind === SPEND_LIMIT.kind)
+    ? limits
+    : [...limits, sampleSpendLimit(now)]
+  return [
+    // The month, not the week: spend limits are most often monthly, and its
+    // dollars beside the limit's percentage give a rough idea of the limit.
+    ...costRows([
+      { label: 'session', usd: sessionUsd },
+      { label: totals.monthLabel, usd: totals.month },
+    ]),
+    limitLine(spend, SPEND_LIMIT, COST_LABEL_WIDTH),
+  ]
+}
+
 /**
  * Lays out the footer rows as spans: the context figures, then the bar and the
- * legend, which are padded to the same width so the limit meters beside them
- * start in the same column.
+ * legend, padded to one width so the right-hand column starts in the same
+ * column on every row.
  */
-function footerRows(snap: Snapshot & { context: ContextFigures }, columns: number): Span[][] {
+function footerRows(
+  context: ContextFigures,
+  right: Span[][],
+  column: Column,
+  columns: number,
+): Span[][] {
+  // On a plan, the meters' full width is reserved even while they show dashes,
+  // so the layout doesn't jump when the first figures arrive.
+  const reserved = column === 'plan' ? LIMIT_WIDTH : 0
+  const rightWidth = Math.max(reserved, ...right.map(spanWidth))
   // The legend merges categories into "other" until the context part fits
-  // beside the meters in the width the footer actually gets.
-  const contextRoom = columns - FOOTER_INSET - GAP - LIMIT_WIDTH
-  const legend = legendLine(snap.context, contextRoom)
-  const stats = contextStats(snap.context)
-  const bar = contextLine(snap.context, barCellsFor(spanWidth(legend)))
+  // beside the right-hand column in the width the footer actually gets.
+  const contextRoom = columns - FOOTER_INSET - GAP - rightWidth
+  const legend = legendLine(context, contextRoom)
+  const stats = contextStats(context)
+  const bar = contextLine(context, barCellsFor(spanWidth(legend)))
   const contextWidth = Math.max(spanWidth(bar), spanWidth(legend), spanWidth(stats))
   const leftWidth = contextWidth + GAP
+  const [first = [], second = [], third = []] = right
 
   return [
     // The figures sit above the bar, ending where the bar and legend end.
-    padStartTo(stats, contextWidth),
-    [...padTo(bar, leftWidth), ...limitLine(snap.limits, FIRST_LIMIT)],
-    [...padTo(legend, leftWidth), ...limitLine(snap.limits, SECOND_LIMIT)],
+    first.length > 0
+      ? [...padTo(padStartTo(stats, contextWidth), leftWidth), ...first]
+      : padStartTo(stats, contextWidth),
+    [...padTo(bar, leftWidth), ...second],
+    [...padTo(legend, leftWidth), ...third],
   ]
 }
 
@@ -497,9 +683,33 @@ export const register: Register = on => {
   // A first reading, so the footer has something before the first reply.
   on('session.start', async ($, e, next) => {
     const result = await next(e)
+    await $.command.register({
+      name: 'usage-footer-preview',
+      description: 'Show the usage footer as it looks for pay-per-use billing or a spend limit',
+      argumentHint: 'cost | spend | off',
+    })
     await refresh($, true)
     await seedModelInfo($)
+    await detectPayPerUse($)
+    await refreshCost($, (await $.session.usage()).cost?.usd)
     return result
+  })
+
+  // /usage-footer-preview cost|spend|off: forces a layout for this session, so
+  // the pay-per-use and spend-limit columns can be seen without that setup.
+  on('command.run', { command: 'usage-footer-preview' }, async ($, e) => {
+    const choice = e.args.trim().toLowerCase()
+    if (choice !== 'cost' && choice !== 'spend' && choice !== 'off') {
+      return { text: 'Usage: /usage-footer-preview cost | spend | off' }
+    }
+    await update($, preview, () => (choice === 'off' ? null : choice))
+    if (choice === 'off') return { text: 'The usage footer shows its normal layout again.' }
+    return {
+      text:
+        choice === 'cost'
+          ? 'The usage footer now shows the pay-per-use layout, with your real cost figures.'
+          : 'The usage footer now shows the spend-limit layout; without a real limit, its meter is a made-up example.',
+    }
   })
 
   // Each main-loop request to the model says which model and effort it was
@@ -521,12 +731,13 @@ export const register: Register = on => {
     if (e.changed.includes('context') || e.changed.includes('rateLimits')) {
       await refresh($, e.changed.includes('context'))
     }
+    if (e.changed.includes('cost')) await refreshCost($, e.cost?.usd)
     return result
   })
 
   // Claude Code's own footer line (permission mode, notices) stays as it is,
   // with the model and effort added at its end; the usage rows are drawn
-  // underneath it (figures, bar, legend).
+  // underneath it (figures, bar, legend), with limits or costs beside them.
   on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
     // The model and effort go at the end of Claude Code's own line, which it
     // keeps drawing itself (so its live parts, like the agent count, still work).
@@ -549,7 +760,16 @@ export const register: Register = on => {
       </Text>
     )
 
-    const rows = footerRows({ ...snap, context: snap.context }, columns)
+    const now = await $.clock.now()
+    const column = chooseColumn(snap, await read($, payPerUse), await read($, preview))
+    const right = rightRows({
+      column,
+      limits: snap.limits,
+      sessionUsd: snap.costUsd ?? 0,
+      totals: (await read($, totals)) ?? { week: 0, month: 0, monthLabel: monthName(new Date(now)) },
+      now,
+    })
+    const rows = footerRows(snap.context, right, column, columns)
     return (
       <Box flexDirection="column">
         {engineLine}
