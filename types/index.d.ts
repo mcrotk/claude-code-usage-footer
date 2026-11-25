@@ -49,8 +49,11 @@ export type CostTotals = {
   monthLabel: string
 }
 
-/** A layout forced with /usage-footer-preview, or null for the real one. */
-export type Preview = 'cost' | 'spend' | null
+/**
+ * The form chosen with /usage-footer-view, kept across sessions, or null when
+ * the mod chooses by itself (`auto`).
+ */
+export type View = 'plan' | 'cost' | 'spend' | null
 
 /** The model and effort level shown at the end of Claude Code's footer line. */
 export type ModelInfo = {
@@ -68,7 +71,7 @@ declare module 'claude-code' {
       /** Whether Claude Code is billed per token here (Bedrock, Vertex, Foundry, an API key). */
       payPerUse: boolean
       totals: CostTotals | null
-      preview: Preview
+      view: View
     }
   }
 }

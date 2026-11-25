@@ -25,7 +25,7 @@ import type {
   CostTotals,
   Limit,
   ModelInfo,
-  Preview,
+  View,
   Snapshot,
 } from '../types'
 import { costTotals, formatUsd, monthName, recordCost } from './cost'
@@ -41,8 +41,20 @@ const modelInfo = atom({ plugin: 'usage-footer', key: 'modelInfo' } as const, {
 const payPerUse = atom({ plugin: 'usage-footer', key: 'payPerUse' } as const, false)
 /** This week's and this month's cost across sessions, for the pay-per-use rows. */
 const totals = atom({ plugin: 'usage-footer', key: 'totals' } as const, null as CostTotals | null)
-/** A layout forced with /usage-footer-preview, so each case can be looked at. */
-const preview = atom({ plugin: 'usage-footer', key: 'preview' } as const, null as Preview)
+/** The form chosen with /usage-footer-view, or null to let the mod choose. */
+const view = atom({ plugin: 'usage-footer', key: 'view' } as const, null as View)
+/** The store key under which that choice is kept across sessions. */
+const VIEW_KEY = 'view'
+/** What /usage-footer-view takes: a form, or `auto` to let the mod choose again. */
+const VIEW_CHOICES = ['plan', 'cost', 'spend', 'auto'] as const
+type ViewChoice = (typeof VIEW_CHOICES)[number]
+/** What /usage-footer-view answers for each choice. */
+const VIEW_MESSAGES: Record<ViewChoice, string> = {
+  plan: 'The usage footer now shows the subscription form, with the 5-hour and 7-day limits, in every session until you enter /usage-footer-view auto. If Claude doesn\'t send you those limits, the meters show dashes.',
+  cost: 'The usage footer now shows the cost form, with this session\'s, this week\'s and this month\'s cost, in every session until you enter /usage-footer-view auto.',
+  spend: 'The usage footer now shows the spend-limit form in every session until you enter /usage-footer-view auto. If no spend limit is set for you, its meter shows a dash.',
+  auto: 'The usage footer is back to choosing its form by itself.',
+}
 
 /** Cells between the context column and the limits column. */
 const GAP = 8
@@ -179,6 +191,27 @@ async function refresh($: EngineInterface, withBreakdown: boolean): Promise<void
     await update($, snapshot, prev => nextSnapshot(prev ?? null, usage))
   } catch (err) {
     $.ui.log(`usage-footer: could not read usage: ${String(err)}`)
+  }
+}
+
+/** Whether a typed argument is one of /usage-footer-view's choices. */
+function isViewChoice(value: string): value is ViewChoice {
+  return (VIEW_CHOICES as readonly string[]).includes(value)
+}
+
+/**
+ * Reads the form chosen with /usage-footer-view from the store, so a choice
+ * made in one session reaches the others (at their start, and after each
+ * reply).
+ */
+async function loadView($: EngineInterface): Promise<void> {
+  try {
+    const stored = await $.store.get(VIEW_KEY)
+    const chosen: View =
+      typeof stored === 'string' && isViewChoice(stored) && stored !== 'auto' ? stored : null
+    await update($, view, () => chosen)
+  } catch (err) {
+    $.ui.log(`usage-footer: could not read the chosen form: ${String(err)}`)
   }
 }
 
@@ -576,23 +609,14 @@ type Column = 'plan' | 'cost' | 'spend'
  * figures: a subscription always gets its 5-hour and 7-day figures with the
  * first reply, so their absence means per-token billing the settings didn't
  * reveal (a Console sign-in, an `apiKeyHelper`, a proxy). Before the first
- * reply, anyone else gets the plan meters' dashes.
+ * reply, anyone else gets the plan meters' dashes. A form chosen with
+ * /usage-footer-view overrides all of this.
  */
-function chooseColumn(snap: Snapshot, isPayPerUse: boolean, forced: Preview): Column {
-  if (forced !== null) return forced
+function chooseColumn(snap: Snapshot, isPayPerUse: boolean, chosen: View): Column {
+  if (chosen !== null) return chosen
   if (snap.limits.some(l => l.kind === SPEND_LIMIT.kind)) return 'spend'
   if (snap.hasPlanLimits) return 'plan'
   return isPayPerUse || snap.hasReplied ? 'cost' : 'plan'
-}
-
-/**
- * A made-up spend limit for the `spend` preview, when no real one has
- * arrived: 42% used, resetting at the start of next month.
- */
-function sampleSpendLimit(now: number): Limit {
-  const date = new Date(now)
-  const nextMonth = new Date(date.getFullYear(), date.getMonth() + 1, 1)
-  return { kind: SPEND_LIMIT.kind, percent: 42, resetsAt: nextMonth.toISOString() }
 }
 
 /** Everything the right-hand column draws from. */
@@ -601,7 +625,6 @@ type ColumnInput = {
   limits: Limit[]
   sessionUsd: number
   totals: CostTotals
-  now: number
 }
 
 /**
@@ -609,7 +632,7 @@ type ColumnInput = {
  * time as they go down. On a plan, the top row is empty and the two meters sit
  * beside the bar and the legend.
  */
-function rightRows({ column, limits, sessionUsd, totals, now }: ColumnInput): Span[][] {
+function rightRows({ column, limits, sessionUsd, totals }: ColumnInput): Span[][] {
   if (column === 'plan') {
     return [[], limitLine(limits, FIRST_LIMIT), limitLine(limits, SECOND_LIMIT)]
   }
@@ -620,9 +643,6 @@ function rightRows({ column, limits, sessionUsd, totals, now }: ColumnInput): Sp
       { label: totals.monthLabel, usd: totals.month },
     ])
   }
-  const spend = limits.some(l => l.kind === SPEND_LIMIT.kind)
-    ? limits
-    : [...limits, sampleSpendLimit(now)]
   return [
     // The month, not the week: spend limits are most often monthly, and its
     // dollars beside the limit's percentage give a rough idea of the limit.
@@ -630,7 +650,7 @@ function rightRows({ column, limits, sessionUsd, totals, now }: ColumnInput): Sp
       { label: 'session', usd: sessionUsd },
       { label: totals.monthLabel, usd: totals.month },
     ]),
-    limitLine(spend, SPEND_LIMIT, COST_LABEL_WIDTH),
+    limitLine(limits, SPEND_LIMIT, COST_LABEL_WIDTH),
   ]
 }
 
@@ -684,10 +704,11 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const result = await next(e)
     await $.command.register({
-      name: 'usage-footer-preview',
-      description: 'Show the usage footer as it looks for pay-per-use billing or a spend limit',
-      argumentHint: 'cost | spend | off',
+      name: 'usage-footer-view',
+      description: 'Choose the usage footer\'s form (subscription limits, costs or a spend limit), or auto',
+      argumentHint: 'plan | cost | spend | auto',
     })
+    await loadView($)
     await refresh($, true)
     await seedModelInfo($)
     await detectPayPerUse($)
@@ -695,21 +716,19 @@ export const register: Register = on => {
     return result
   })
 
-  // /usage-footer-preview cost|spend|off: forces a layout for this session, so
-  // the pay-per-use and spend-limit columns can be seen without that setup.
-  on('command.run', { command: 'usage-footer-preview' }, async ($, e) => {
+  // /usage-footer-view plan|cost|spend|auto: chooses the right-hand column's
+  // form for every session (kept in the store) until `auto` hands the choice
+  // back to the mod. A form shows only real figures; where the figures it
+  // needs never arrive, its meters show dashes.
+  on('command.run', { command: 'usage-footer-view' }, async ($, e) => {
     const choice = e.args.trim().toLowerCase()
-    if (choice !== 'cost' && choice !== 'spend' && choice !== 'off') {
-      return { text: 'Usage: /usage-footer-preview cost | spend | off' }
+    if (!isViewChoice(choice)) {
+      return { text: 'Usage: /usage-footer-view plan | cost | spend | auto' }
     }
-    await update($, preview, () => (choice === 'off' ? null : choice))
-    if (choice === 'off') return { text: 'The usage footer shows its normal layout again.' }
-    return {
-      text:
-        choice === 'cost'
-          ? 'The usage footer now shows the pay-per-use layout, with your real cost figures.'
-          : 'The usage footer now shows the spend-limit layout; without a real limit, its meter is a made-up example.',
-    }
+    const chosen: View = choice === 'auto' ? null : choice
+    await $.store.set(VIEW_KEY, chosen)
+    await update($, view, () => chosen)
+    return { text: VIEW_MESSAGES[choice] }
   })
 
   // Each main-loop request to the model says which model and effort it was
@@ -732,6 +751,7 @@ export const register: Register = on => {
       await refresh($, e.changed.includes('context'))
     }
     if (e.changed.includes('cost')) await refreshCost($, e.cost?.usd)
+    await loadView($)
     return result
   })
 
@@ -761,13 +781,12 @@ export const register: Register = on => {
     )
 
     const now = await $.clock.now()
-    const column = chooseColumn(snap, await read($, payPerUse), await read($, preview))
+    const column = chooseColumn(snap, await read($, payPerUse), await read($, view))
     const right = rightRows({
       column,
       limits: snap.limits,
       sessionUsd: snap.costUsd ?? 0,
       totals: (await read($, totals)) ?? { week: 0, month: 0, monthLabel: monthName(new Date(now)) },
-      now,
     })
     const rows = footerRows(snap.context, right, column, columns)
     return (
